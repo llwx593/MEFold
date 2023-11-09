@@ -13,7 +13,7 @@ import torch
 
 import esm
 from esm.model.esm2 import ESM2
-# from memory_profiler import profile
+
 
 def _has_regression_weights(model_name):
     """Return whether we expect / require regression weights;
@@ -418,7 +418,3 @@ def esmfold_v1():
     """
     import esm.esmfold.v1.pretrained
     return esm.esmfold.v1.pretrained.esmfold_v1()
-
-def esmfold_v1_structure():
-    import esm.esmfold.v1.pretrained
-    return esm.esmfold.v1.pretrained.esmfold_v1_structure()

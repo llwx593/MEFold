@@ -22,24 +22,17 @@ class MemoryLogger:
         self.flag = True
         
     def IntimeRecord(self):
-        # gpu = GPUtil.getGPUs()[self.device_id]
         import pynvml
         pynvml.nvmlInit()
         while True:
             if not self.flag:
                 print(f"trunk peak memory {self.maxMemory}")
                 break
-            # freeMem = gpu.memoryFree
-            # usedMem = gpu.memoryUsed
-            # print("!!!",usedMem - self.allocatedMemory)
             handler = pynvml.nvmlDeviceGetHandleByIndex(0)
             meminfo = pynvml.nvmlDeviceGetMemoryInfo(handler)
             total = round(meminfo.total / 1024 / 1024, 2)
             used = round(meminfo.used / 1024 / 1024, 2)
             free = round(meminfo.free / 1024 / 1024, 2)
-            # if used - self.allocatedMemory > self.maxMemory:
-            #     self.maxMemory = used - self.allocatedMemory             
-            # self.currentMemoryUsed = used 
             if used > self.maxMemory:
                 self.maxMemory = used
             time.sleep(0.00000000005)
@@ -48,7 +41,6 @@ class MemoryLogger:
     def IntimeRecordThreadStart(self):
         self.recordthread = threading.Thread(target=self.IntimeRecord,)
         self.recordthread.start()
-        # self.recordthread.daemon=True
         
     def IntimeRecordThreadEnd(self):
         self.flag = False
@@ -64,22 +56,16 @@ class MemoryLogger:
         self.currentMemoryUsed = usedMem
         
 def _load_model(model_name):
-    # memorylogger=MemoryLogger(0)
     if model_name.endswith(".pt"):  # local, treat as filepath
         model_path = Path(model_name)
         model_data = torch.load(str(model_path), map_location="cpu")
     else:  # load from hub
         url = f"https://dl.fbaipublicfiles.com/fair-esm/models/{model_name}.pt"
         model_data = torch.hub.load_state_dict_from_url(url, progress=False, map_location="cpu")
-        # model_data = torch.hub.load_state_dict_from_url(url, progress=False, map_location="gpu")
-        
-    
+
     cfg = model_data["cfg"]["model"]
     model_state = model_data["model"]
-    # model_state.to("cuda:0")
-    # memorylogger.log("load esmfold state")
     model = ESMFold(esmfold_config=cfg)
-    # memorylogger.log("esm load sate")
     
     expected_keys = set(model.state_dict().keys())
     found_keys = set(model_state.keys())
@@ -120,8 +106,6 @@ def _get_model_definition(model_name):
     if missing_essential_keys:
         raise RuntimeError(f"Keys '{', '.join(missing_essential_keys)}' are missing.")
 
-    # model.load_state_dict(model_state, strict=False)
-
     return model
 
 
@@ -146,5 +130,4 @@ def esmfold_v1():
     return _load_model("esmfold_3B_v1")
 
 def esmfold_v1_structure():
-    print("!!get structure done!!")
     return _get_model_definition("esmfold_3B_v1")

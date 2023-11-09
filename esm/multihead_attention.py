@@ -11,69 +11,13 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn import Parameter
 from esm.rotary_embedding import RotaryEmbedding
+
 from openfold.utils.chunk_utils import chunk_layer
-from functools import partialmethod, partial
+from functools import partial
 import uuid
-import time
-import GPUtil
 import logging
-import threading
 logging.getLogger().setLevel(logging.INFO)
 
-class MemoryIntimeLogger:
-    def __init__(self, device_id: int):
-        gpu = GPUtil.getGPUs()[device_id]
-        logging.info(f'esm2 memoryRecord Initializing: Used memory = {gpu.memoryUsed}MiB, Free memory = {gpu.memoryFree}MiB, '
-                     f'Total memory = {gpu.memoryTotal}MiB')
-
-        self.device_id = device_id
-        self.currentMemoryUsed = gpu.memoryUsed
-        self.allocatedMemory = gpu.memoryUsed
-        self.maxMemory = 0
-        self.flag = True
-    
-    def IntimeRecord(self):
-        # gpu = GPUtil.getGPUs()[self.device_id]
-        import pynvml
-        pynvml.nvmlInit()
-        while True:
-            if not self.flag:
-                print(f"mlp pair peak memory {self.maxMemory}")
-                break
-            # freeMem = gpu.memoryFree
-            # usedMem = gpu.memoryUsed
-            # print("!!!",usedMem - self.allocatedMemory)
-            handler = pynvml.nvmlDeviceGetHandleByIndex(0)
-            meminfo = pynvml.nvmlDeviceGetMemoryInfo(handler)
-            total = round(meminfo.total / 1024 / 1024, 2)
-            used = round(meminfo.used / 1024 / 1024, 2)
-            free = round(meminfo.free / 1024 / 1024, 2)
-            if used - self.allocatedMemory > self.maxMemory:
-                self.maxMemory = used - self.allocatedMemory
-                # logging.info(f'{mark}: Allocate memory = {usedMem - self.allocatedMemory: .1f}MiB, '
-                #             f'Free memory = {freeMem: .1f}MiB, Increased memory = {usedMem - self.currentMemoryUsed: .1f}')
-            self.currentMemoryUsed = used 
-            time.sleep(0.00000000005)
-        
-    
-    def IntimeRecordThreadStart(self):
-        self.recordthread = threading.Thread(target=self.IntimeRecord,)
-        self.recordthread.start()
-        # self.recordthread.daemon=True
-        
-        
-    def IntimeRecordThreadEnd(self):
-        self.flag = False
-        self.recordthread.join()
-        
-    def log(self, mark: str):
-        # synchronize
-        gpu = GPUtil.getGPUs()[self.device_id]
-        freeMem = gpu.memoryFree
-        usedMem = gpu.memoryUsed
-        logging.info(f'{mark}: Allocate memory = {usedMem - self.allocatedMemory: .1f}MiB, '
-                     f'Free memory = {freeMem: .1f}MiB, Increased memory = {usedMem - self.currentMemoryUsed: .1f}')
-        self.currentMemoryUsed = usedMem
 
 def utils_softmax(x, dim: int, onnx_trace: bool = False):
     if onnx_trace:
@@ -301,7 +245,6 @@ class MultiheadAttention(nn.Module):
                 weights for each head. Implies *need_weights*. Default:
                 return the average attention weights over all heads.
         """
-        
         if need_head_weights:
             need_weights = True
 
@@ -344,7 +287,6 @@ class MultiheadAttention(nn.Module):
                 k_proj_weight=self.k_proj.weight,
                 v_proj_weight=self.v_proj.weight,
             )
-        # memoryrecord.log("stage1")
         if incremental_state is not None:
             saved_state = self._get_input_buffer(incremental_state)
             if saved_state is not None and "prev_key" in saved_state:
@@ -356,8 +298,6 @@ class MultiheadAttention(nn.Module):
         else:
             saved_state = None
 
-        # memoryrecord.log("stage2")
-        
         if self.self_attention:
             q = self.q_proj(query)
             k = self.k_proj(query)
@@ -375,12 +315,8 @@ class MultiheadAttention(nn.Module):
         else:
             assert key is not None and value is not None
             q = self.q_proj(query)
-            # q = self._q_linear_chunk(query, 2)
             k = self.k_proj(key)
-            # k = self._k_linear_chunk(key, 2)
             v = self.v_proj(value)
-            # v = self._v_linear_chunk(value, 2)
-        # memoryrecord.log("stage3")
         q *= self.scaling
 
         if self.bias_k is not None:
@@ -399,13 +335,13 @@ class MultiheadAttention(nn.Module):
                     ],
                     dim=1,
                 )
-        # memoryrecord.log("stage4")
+
         q = q.contiguous().view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
         if k is not None:
             k = k.contiguous().view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
         if v is not None:
             v = v.contiguous().view(-1, bsz * self.num_heads, self.head_dim).transpose(0, 1)
-        # memoryrecord.log("stage5")
+
         if saved_state is not None:
             # saved states are stored with shape (bsz, num_heads, seq_len, head_dim)
             if "prev_key" in saved_state:
@@ -446,7 +382,6 @@ class MultiheadAttention(nn.Module):
             incremental_state = self._set_input_buffer(incremental_state, saved_state)
         assert k is not None
         src_len = k.size(1)
-        # memoryrecord.log("stage6")
 
         # This is part of a workaround to get around fork/join parallelism
         # not supporting Optional types.
@@ -474,16 +409,13 @@ class MultiheadAttention(nn.Module):
                     ],
                     dim=1,
                 )
-        # memoryrecord.log("stage7")
+
         if self.rot_emb:
             q, k = self.rot_emb(q, k)
-        # memoryrecord.log("stage7.5")
-        # memoryrecord.IntimeRecordThreadStart()
+
         attn_weights = torch.bmm(q, k.transpose(1, 2))
-        # attn_weights = self._bmm_chunk(q=q, k=k.transpose(1, 2), chunk_size=1)
         attn_weights = MultiheadAttention.apply_sparse_mask(attn_weights, tgt_len, src_len, bsz)
-        # memoryrecord.IntimeRecordThreadEnd()
-        # memoryrecord.log("stage8")
+
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
         if attn_mask is not None:
@@ -491,7 +423,7 @@ class MultiheadAttention(nn.Module):
             if self.onnx_trace:
                 attn_mask = attn_mask.repeat(attn_weights.size(0), 1, 1)
             attn_weights += attn_mask
-        # memoryrecord.log("stage9")
+
         if key_padding_mask is not None:
             # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
@@ -499,7 +431,7 @@ class MultiheadAttention(nn.Module):
                 key_padding_mask.unsqueeze(1).unsqueeze(2).to(torch.bool), float("-inf")
             )
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
-        # memoryrecord.log("stage10")
+
         if before_softmax:
             return attn_weights, v
 
@@ -512,8 +444,6 @@ class MultiheadAttention(nn.Module):
         )
         assert v is not None
         attn = torch.bmm(attn_probs, v)
-        # attn = self._bmm_chunk(attn_probs, v, 1)
-        # memoryrecord.log("stage11")
         assert list(attn.size()) == [bsz * self.num_heads, tgt_len, self.head_dim]
         if self.onnx_trace and attn.size(1) == 1:
             # when ONNX tracing a single decoder step (sequence length == 1)
@@ -521,10 +451,8 @@ class MultiheadAttention(nn.Module):
             attn = attn.contiguous().view(tgt_len, bsz, embed_dim)
         else:
             attn = attn.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
-        # memoryrecord.log("stage12")
         attn = self.out_proj(attn)
         attn_weights: Optional[Tensor] = None
-        # memoryrecord.log("stage13")
         if need_weights:
             attn_weights = attn_weights_float.view(
                 bsz, self.num_heads, tgt_len, src_len
@@ -532,7 +460,7 @@ class MultiheadAttention(nn.Module):
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
-        # memoryrecord.log("stage14")
+
         return attn, attn_weights
 
     @staticmethod

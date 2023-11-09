@@ -135,7 +135,6 @@ class ESM2(nn.Module):
         )
 
     def forward(self, tokens, repr_layers=[], need_head_weights=False, return_contacts=False):
-       
         if return_contacts:
             need_head_weights = True
 
@@ -143,7 +142,7 @@ class ESM2(nn.Module):
         padding_mask = tokens.eq(self.padding_idx)  # B, T
 
         x = self.embed_scale * self.embed_tokens(tokens)
-        
+
         if self.token_dropout:
             x.masked_fill_((tokens == self.mask_idx).unsqueeze(-1), 0.0)
             # x: B x T x C
@@ -154,8 +153,7 @@ class ESM2(nn.Module):
 
         if padding_mask is not None:
             x = x * (1 - padding_mask.unsqueeze(-1).type_as(x))
-        
-        
+
         repr_layers = set(repr_layers)
         hidden_representations = {}
         if 0 in repr_layers:
@@ -169,7 +167,7 @@ class ESM2(nn.Module):
 
         if not padding_mask.any():
             padding_mask = None
-        
+
         for layer_idx, layer in enumerate(self.layers):
             x, attn = layer(
                 x,
@@ -181,7 +179,7 @@ class ESM2(nn.Module):
             if need_head_weights:
                 # (H, B, T, T) => (B, H, T, T)
                 attn_weights.append(attn.transpose(1, 0))
-            
+
         x = self.emb_layer_norm_after(x)
         x = x.transpose(0, 1)  # (T, B, E) => (B, T, E)
 
@@ -189,7 +187,7 @@ class ESM2(nn.Module):
         if (layer_idx + 1) in repr_layers:
             hidden_representations[layer_idx + 1] = x
         x = self.lm_head(x)
-        
+
         result = {"logits": x, "representations": hidden_representations}
         if need_head_weights:
             # attentions: B x L x H x T x T
@@ -202,7 +200,7 @@ class ESM2(nn.Module):
             if return_contacts:
                 contacts = self.contact_head(tokens, attentions)
                 result["contacts"] = contacts
-        
+
         return result
 
     def predict_contacts(self, tokens):

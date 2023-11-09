@@ -61,8 +61,6 @@ class ESM1LayerNorm(nn.Module):
         x: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-        print("!!! esm_layernrom_chunk_size:",chunk_size)
-        print(x.shape)
         return chunk_layer(
             partial(
                 self._esmlayernorm, 
@@ -90,7 +88,7 @@ class ESM1LayerNorm(nn.Module):
         if self.affine:
             x = (self.weight * x) + self.bias
         return x
-        # return self._chunk(x, 1)
+
 
 try:
     from apex.normalization import FusedLayerNorm as _FusedLayerNorm
@@ -153,8 +151,6 @@ class TransformerLayer(nn.Module):
         self_attn_mask: torch.Tensor,
         
     ) -> torch.Tensor:
-        print("!!! multi_attention_chunk_size:",chunk_size)
-        print(x.shape)
         return chunk_layer(
             partial(
                 self.self_attn, 
@@ -189,8 +185,6 @@ class TransformerLayer(nn.Module):
         chunk_size: int,
         
     ) -> torch.Tensor:
-        print("!!! norm_chunk_size:",chunk_size)
-        print(x.shape)
         return chunk_layer(
             partial(
                 self._norm, 
@@ -216,15 +210,6 @@ class TransformerLayer(nn.Module):
             need_head_weights=need_head_weights,
             attn_mask=self_attn_mask,
         )
-    
-        # print("!!!multiheadattention chunk here")
-        # x ,attn = self._chunk(
-        #     x, 1, self_attn_padding_mask, False, self_attn_mask
-        # )
-        
-    
-        # x = self._norm_chunk(x, residual, 1)
-        
         x = residual + x
 
         residual = x
@@ -509,164 +494,4 @@ class FeedForwardNetwork(nn.Module):
         x = self.activation_fn(self.fc1(x))
         x = self.activation_dropout_module(x)
         x = self.fc2(x)
-        return x
-
-
-
-class FakeQuantize(Function):
-    @staticmethod
-    def forward(ctx, x, qparam):
-        x = qparam.quantize_tensor(x)
-        x = qparam.dequantize_tensor(x)
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None
-
-def calcScaleZeroPoint(min_val, max_val, num_bits=8):
-    qmin = 0.
-    qmax = 2. ** num_bits - 1.
-    scale = (max_val - min_val) / (qmax - qmin)
-
-    zero_point = qmax - max_val / scale
-
-    if zero_point < qmin:
-        zero_point = torch.tensor([qmin], dtype=torch.float32).to(min_val.device)
-    elif zero_point > qmax:
-        # zero_point = qmax
-        zero_point = torch.tensor([qmax], dtype=torch.float32).to(max_val.device)
-    
-    zero_point.round_()
-
-    return scale, zero_point
-
-def quantize_tensor(x, scale, zero_point, num_bits=8, signed=False):
-    if signed:
-        qmin = - 2. ** (num_bits - 1)
-        qmax = 2. ** (num_bits - 1) - 1
-    else:
-        qmin = 0.
-        qmax = 2. ** num_bits - 1.
-    # print(x.shape)
-    # print(zero_point.shape)
-    q_x = zero_point + x / scale
-    q_x.clamp_(qmin, qmax).round_()
-    
-    return q_x
- 
-def dequantize_tensor(q_x, scale, zero_point):
-    return scale * (q_x - zero_point)
-
-class QParam(nn.Module):
-
-    def __init__(self, num_bits=8):
-        super(QParam, self).__init__()
-        self.num_bits = num_bits
-        scale = torch.tensor([], requires_grad=False)
-        zero_point = torch.tensor([], requires_grad=False)
-        min = torch.tensor([], requires_grad=False)
-        max = torch.tensor([], requires_grad=False)
-        self.register_buffer('scale', scale)
-        self.register_buffer('zero_point', zero_point)
-        self.register_buffer('min', min)
-        self.register_buffer('max', max)
-
-    def update(self, tensor):
-        if self.max.nelement() == 0 or self.max.data < tensor.max().data:
-            self.max.data = tensor.max().data
-        self.max.clamp_(min=0)
-        
-        if self.min.nelement() == 0 or self.min.data > tensor.min().data:
-            self.min.data = tensor.min().data
-        self.min.clamp_(max=0)
-        
-        self.scale, self.zero_point = calcScaleZeroPoint(self.min, self.max, self.num_bits)
-    
-    def quantize_tensor(self, tensor):
-        return quantize_tensor(tensor, self.scale, self.zero_point, num_bits=self.num_bits)
-
-    def dequantize_tensor(self, q_x):
-        return dequantize_tensor(q_x, self.scale, self.zero_point)
-
-    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
-        key_names = ['scale', 'zero_point', 'min', 'max']
-        for key in key_names:
-            value = getattr(self, key)
-            value.data = state_dict[prefix + key].data
-            state_dict.pop(prefix + key)
-
-class QModule(nn.Module):
-
-    def __init__(self, qi=True, qo=True, num_bits=8):
-        super(QModule, self).__init__()
-        if qi:
-            self.qi = QParam(num_bits=num_bits)
-        if qo:
-            self.qo = QParam(num_bits=num_bits)
-
-    def freeze(self):
-        pass
-
-    def quantize_inference(self, x):
-        raise NotImplementedError('quantize_inference should be implemented.')
-    
-
-class QLinear(QModule):
-
-    def __init__(self, fc_module, qi=True, qo=True, num_bits=8):
-        super(QLinear, self).__init__(qi=qi, qo=qo, num_bits=num_bits)
-        self.num_bits = num_bits
-        self.fc_module = fc_module
-        self.qw = QParam(num_bits=num_bits)
-        self.register_buffer('M', torch.tensor([], requires_grad=False))  # 将M注册为buffer
-
-    def freeze(self, qi=None, qo=None):
-
-        if hasattr(self, 'qi') and qi is not None:
-            raise ValueError('qi has been provided in init function.')
-        if not hasattr(self, 'qi') and qi is None:
-            raise ValueError('qi is not existed, should be provided.')
-
-        if hasattr(self, 'qo') and qo is not None:
-            raise ValueError('qo has been provided in init function.')
-        if not hasattr(self, 'qo') and qo is None:
-            raise ValueError('qo is not existed, should be provided.')
-
-        if qi is not None:
-            self.qi = qi
-        if qo is not None:
-            self.qo = qo
-        self.M.data = (self.qw.scale * self.qi.scale / self.qo.scale).data
-
-        self.fc_module.weight.data = self.qw.quantize_tensor(self.fc_module.weight.data)
-        self.fc_module.weight.data = self.fc_module.weight.data - self.qw.zero_point
-        try:
-            self.fc_module.bias.data = quantize_tensor(self.fc_module.bias.data, scale=self.qi.scale * self.qw.scale,
-                                                   zero_point=0, num_bits=32, signed=True)
-        except:
-            pass
-        # bias=False
-    def forward(self, x):
-        if hasattr(self, 'qi'):
-            self.qi.update(x)
-            x = FakeQuantize.apply(x, self.qi)
-
-        self.qw.update(self.fc_module.weight.data)
-
-        x = F.linear(x, FakeQuantize.apply(self.fc_module.weight, self.qw), self.fc_module.bias)
-
-        if hasattr(self, 'qo'):
-            self.qo.update(x)
-            x = FakeQuantize.apply(x, self.qo)
-
-        return x
-
-    def quantize_inference(self, x):
-        x = x - self.qi.zero_point
-        x = self.fc_module(x)
-        x = self.M * x
-        x.round_() 
-        x = x + self.qo.zero_point
-        x.clamp_(0., 2.**self.num_bits-1.).round_()
         return x

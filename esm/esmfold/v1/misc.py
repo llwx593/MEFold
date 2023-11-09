@@ -176,9 +176,6 @@ class Attention(nn.Module):
         bias: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-        print("!!!atten_chunk",chunk_size)
-        print(x.shape)
-
         return chunk_layer(
             partial(
                 self.atten, 
@@ -261,7 +258,6 @@ class Attention(nn.Module):
         y = self.o_proj(y)
 
         return y, rearrange(a, "... lq lk h -> ... h lq lk")
-        # return self._chunk(x, mask, bias, 1)
 
 
 class Dropout(nn.Module):
@@ -303,8 +299,6 @@ class SequenceToPair(nn.Module):
         sequence_state: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-        print("!!!s2p_chunk",chunk_size)
-        print(sequence_state.shape)
         return chunk_layer(
             partial(
                 self.s2p, 
@@ -365,7 +359,6 @@ class SequenceToPair(nn.Module):
         x = self.o_proj(x)
 
         return x
-        # return self._chunk(sequence_state, 1)
 
 
 class PairToSequence(nn.Module):
@@ -415,8 +408,6 @@ class ResidueMLP(nn.Module):
         x: torch.Tensor,
         chunk_size: int,
     ) -> torch.Tensor:
-        # print("!!! mlp_chunk_size:",chunk_size)
-        # print(f"mlp input shape: {x.shape}")
         return chunk_layer(
             partial(
                 self._mlp, 
