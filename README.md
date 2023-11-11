@@ -44,6 +44,8 @@ We get the corresponding chunk size configuration from the output of the above p
 python test.py --wbits 4 --load "esmfold_rtn_quant.pt" --cs1 29 --cs2 461 --cs3 461
 ```
 
+If you want to pre-compute the seed sequences by choosing them yourself, you can obtain the pre-computed chunk size configuration file by following these steps
+
 ```bash
 mkdir logs
 bash seed_profile.sh
@@ -54,4 +56,4 @@ python lookuptable_chunk.py --task seed_task --log_path logs --chunk_config chun
 ```
 
 ## Acknowledgements
-This code is based on [ESM](https://github.com/facebookresearch/esm) and [GPTQ for LLaMA](https://github.com/qwopqwop200/GPTQ-for-LLaMa)
+This code is based on [ESM](https://github.com/facebookresearch/esm), [OpenFold](https://github.com/aqlaboratory/openfold) and [GPTQ for LLaMA](https://github.com/qwopqwop200/GPTQ-for-LLaMa)
