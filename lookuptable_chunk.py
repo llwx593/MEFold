@@ -72,14 +72,14 @@ def get_chunk_config(s_len,peak_m):
 def get_real_chunkdic(ref_peak_m,real_len,ref_len):
     
     low_memo=ref_peak_m[-1][-1]
-    low_memo_real =  72*((real_len/100)**2) + 15032.5
+    low_memo_real =  72*((real_len/100)**2.12) + 6142.5
     print("real low memo:",low_memo_real)
     real_peak_m=ref_peak_m.copy()
     for i in range(len(ref_peak_m[0])-1,-1,-1):
         
-        real_peak_m[0][i]=(ref_peak_m[0][i]-low_memo)*((real_len/ref_len)**3) + low_memo_real if ref_peak_m[0][i]!=low_memo else 72*((real_len/100)**2) + 15032.5 
-        real_peak_m[1][i]=(ref_peak_m[1][i]-low_memo)*((real_len/ref_len)**2) + low_memo_real if ref_peak_m[1][i]!=low_memo else 72*((real_len/100)**2) + 15032.5 
-        real_peak_m[2][i]=(ref_peak_m[2][i]-low_memo)*((real_len/ref_len)**2) + low_memo_real if ref_peak_m[2][i]!=low_memo else 72*((real_len/100)**2) + 15032.5
+        real_peak_m[0][i]=(ref_peak_m[0][i]-low_memo)*((real_len/ref_len)**3) + low_memo_real if ref_peak_m[0][i]!=low_memo else 72*((real_len/100)**2.12) + 6142.5 
+        real_peak_m[1][i]=(ref_peak_m[1][i]-low_memo)*((real_len/ref_len)**2) + low_memo_real if ref_peak_m[1][i]!=low_memo else 72*((real_len/100)**2.12) + 6142.5 
+        real_peak_m[2][i]=(ref_peak_m[2][i]-low_memo)*((real_len/ref_len)**2) + low_memo_real if ref_peak_m[2][i]!=low_memo else 72*((real_len/100)**2.12) + 6142.5
         real_peak_m[3][i] = low_memo_real
     for i in (real_peak_m):
         print(i)
@@ -98,14 +98,14 @@ def find_ref_peak(input_squence_len, peak_config):
         if s_len>=input_squence_len:
             ref_len=i
             break
-    ref_seed = seed_peak_dict[ref_len]
+    ref_seed = seed_peak_dict[str(seed_len[ref_len])]
     seed_peak_m = []
     for key in ref_seed.keys():
         seed_peak_m.append(ref_seed[key])
     return seed_peak_m, seed_len[ref_len]
   
-def func_sequence_get_chunkconfig(input_squence_len):
-    ref_peak_m, ref_seqence_len = find_ref_peak(input_squence_len)
+def func_sequence_get_chunkconfig(input_squence_len, peak_config):
+    ref_peak_m, ref_seqence_len = find_ref_peak(input_squence_len, peak_config)
     print("Ref squence len : ",ref_seqence_len)
     real_peak_m = get_real_chunkdic(ref_peak_m,input_squence_len,ref_seqence_len)
     real_chunk_config = get_chunk_config(input_squence_len,real_peak_m)
@@ -114,29 +114,30 @@ def func_sequence_get_chunkconfig(input_squence_len):
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--task', type=int, default=0, help='the id of gpu')
+    parser.add_argument('--task', type=str, default="", help='the type of task')
     parser.add_argument('--log_path', type=str, default='', help='path of seed sequence')
+    parser.add_argument('--chunk_config', type=str, default='', help='path of chunk config')
     parser.add_argument('--peak_config', type=str, default='', help='path of peak config')
-    parser.add_argument('--input_seqlen', type=str, default='', help='length of input sequence')
+    parser.add_argument('--input_seqlen', type=int, default=0, help='length of input sequence')
 
     args = parser.parse_args()
 
     seqlen_list = [255, 384, 463, 514, 588, 682, 718, 779, 863, 949]
     if args.task == "seed_task":
         log_list = os.listdir(args.log_path)
+        chunk_config = {}
+        peak_dict = {}
         for i in range(len(log_list)):
             file_path = os.path.join(args.log_path, log_list[i])
             seq_len = seqlen_list[i]
             per_config, per_dict = find_chunk_config_seed(file_path, seq_len)
-        chunk_config = {}
-        chunk_config[seq_len] = per_config
-        peak_dict = {}
-        peak_dict[seq_len] = per_dict
+            chunk_config[str(seq_len)] = per_config
+            peak_dict[str(seq_len)] = per_dict
         cc_json = json.dumps(chunk_config, indent=4)
-        with open("chunk_config.json", "w") as f:
+        with open(args.chunk_config, "w") as f:
             f.write(cc_json)
         pd_json = json.dumps(peak_dict, indent=4)
-        with open("peak_config.json", "w") as f:
+        with open(args.peak_config, "w") as f:
             f.write(pd_json)
     elif args.task == "real_inference":
         input_config = func_sequence_get_chunkconfig(args.input_seqlen, args.peak_config)

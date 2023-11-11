@@ -35,13 +35,22 @@ python weight_only.py --wbits 4 --save "esmfold_rtn_quant.pt"
 Next, we get the chunk size configuration for the input sequence with the following command.
 
 ```bash
-python lookuptable_chunk.py --task real_inference --input_seqlen 922
+python lookuptable_chunk.py --task real_inference --input_seqlen 922 --peak_config peak_config.json
 ```
 
 We get the corresponding chunk size configuration from the output of the above program, and choose the appropriate scheme according to the actual memory.
 
 ```bash
-python test.py --wbits 4 --load "esmfold_rtn_quant.pt" --cs1 15 --cs2 461 --cs3 231
+python test.py --wbits 4 --load "esmfold_rtn_quant.pt" --cs1 29 --cs2 461 --cs3 461
+```
+
+```bash
+mkdir logs
+bash seed_profile.sh
+```
+
+```bash
+python lookuptable_chunk.py --task seed_task --log_path logs --chunk_config chunk_config.json --peak_config peak_config.json
 ```
 
 ## Acknowledgements

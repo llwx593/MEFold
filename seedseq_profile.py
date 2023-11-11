@@ -67,7 +67,8 @@ if __name__ == '__main__':
     model = model.cuda()
     module_cnt = 4
 
-    seq = seq_dict[args.seq_id]
+    seq_list = ["7ER0", "T0960", "T1075", "7W5U", "T1085", "7QBZ", "T1009", "T1050", "T1091", "T1061"]
+    seq = seq_dict[str(seq_list[args.seq_id])]
 
     s_len=len(seq)
 

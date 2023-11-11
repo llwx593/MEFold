@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .multihead_attention import MultiheadAttention, MemoryIntimeLogger  # noqa
+from .multihead_attention import MultiheadAttention  # noqa
 from .axial_attention import ColumnSelfAttention, RowSelfAttention
 from torch.autograd import Function
 from openfold.utils.chunk_utils import chunk_layer

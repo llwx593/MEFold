@@ -107,7 +107,7 @@ if __name__ == '__main__':
     
     model.set_chunk_size(chunk_dict)
     model.set_device_id(args.device_id)
-
+    model.cuda()
     quantizers = esmfold_sequential(model)
     quant_pack(model, quantizers, args.wbits, args.groupsize)
     torch.save(model.state_dict(), args.save)
